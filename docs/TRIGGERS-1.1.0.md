@@ -1,6 +1,9 @@
 # Kirimi triggers on Zapier — design for 1.1.0
 
-Status: **proposal, not implemented.** Needs sign-off on three decisions (section 11).
+Status: **design approved, not implemented.** The fan-out and `performList` decisions are locked
+(new `tbl_webhook_subscriptions` + new `tbl_webhook_events`). The implementation-ready contract is
+[WEBHOOK-SUBSCRIPTIONS-API.md](./WEBHOOK-SUBSCRIPTIONS-API.md); this document explains why the work
+is needed and what was found in the existing pipeline.
 
 Goal: give Zaps an instant event source (inbound WhatsApp message, delivery status, WABA message)
 so users can react to conversations instead of only sending into them.
@@ -120,16 +123,12 @@ unsigned so nothing existing has to change.
 ### 4.4 Recent events for `performList`
 
 The log table cannot be trusted as-is (divergent columns, 30 day retention, only written when a
-delivery happens). Two options, in preference order:
+delivery happens). **Decision: `tbl_webhook_events`**, described in the spec:
 
-- **A (preferred).** New append-only `tbl_webhook_events`: `id`, `user_code`, `device_id`,
-  `waba_id`, `event`, `payload` json, `created_at`, retention 30 days via the existing
-  `workers/log-cleanup.worker.ts`. Written by the same code path that fans out, for every emitted
-  event, whether or not a subscription exists. This makes `performList` deterministic and gives the
-  subscription path its own audit trail.
-- **B (cheaper, messier).** Read `tbl_webhook_logs` filtered by `user_code` + `event`, parsing
-  `request_body`. Requires reconciling the two writers first, and gives nothing when no webhook URL
-  is configured.
+- Append-only `tbl_webhook_events`: `id`, `user_code`, `device_id`, `waba_id`, `event`, `payload`
+  json, `created_at`, retention 30 days via the existing `workers/log-cleanup.worker.ts`. Written by
+  the same code path that fans out, for every emitted event, whether or not a subscription exists.
+  This makes `performList` deterministic and gives the subscription path its own audit trail.
 
 ### 4.5 Public API endpoints
 
@@ -283,13 +282,19 @@ Rough order: mono-v2 endpoints and table first (a trigger can be tested against 
   WhatsApp message during review, which is fine but must be documented for the test account in
   `ZAPIER-PUBLISHING.md`.
 
-## 9. Open questions
+## 9. Resolved and remaining questions
 
-1. Is a Zapier subscription allowed to be scoped to a whole account rather than one device
-   (one subscription covering all devices)? The current forwarder resolves targets per device, so
-   account scoping needs a join or a per-device fan-out internally.
-2. Should `events` be a hard allow-list in the API, or accept any string and let the forwarder
-   filter? A typo that silently dead-ends is the risk.
-3. Retention and where the events feed lives (option A vs B in 4.4).
-4. Do we want Zapier to be able to receive `template.status_update` / account alerts from WABA, or
-   keep the first release to messages only?
+Resolved:
+
+- Fan-out: new `tbl_webhook_subscriptions`, dashboard delivery path untouched.
+- `performList` source: new `tbl_webhook_events`.
+- Retention and cleanup: 30 days, reusing `workers/log-cleanup.worker.ts` and the cascade map.
+
+Remaining, to settle while implementing:
+
+1. Should a subscription be scoped to the whole account instead of one device? The forwarder
+   resolves targets per device, so account scope needs a join or an internal per-device fan-out.
+2. `events` as a hard allow-list (chosen in the spec) means a typo is a 400 instead of a silent dead
+   subscription. Confirm that is the wanted behaviour for third-party callers.
+3. Do we want WABA `template.status_update` and account alerts available to Zaps in the first
+   release, or messages only?
