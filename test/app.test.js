@@ -35,6 +35,7 @@ const isTitleCase = (label) => {
 };
 
 const operations = [
+  ...Object.values(App.triggers).map((operation) => ({ kind: 'trigger', operation })),
   ...Object.values(App.creates).map((operation) => ({ kind: 'create', operation })),
   ...Object.values(App.searches).map((operation) => ({ kind: 'search', operation })),
 ];
@@ -55,6 +56,12 @@ test('every operation has a description that ends with a period', () => {
 test('search descriptions follow the finds convention', () => {
   for (const { kind, operation } of operations.filter((item) => item.kind === 'search')) {
     assert.match(operation.display.description, /^Finds /, `${operation.key} description`);
+  }
+});
+
+test('trigger descriptions follow the triggers when convention', () => {
+  for (const { kind, operation } of operations.filter((item) => item.kind === 'trigger')) {
+    assert.match(operation.display.description, /^Triggers when /, `${operation.key} description`);
   }
 });
 
@@ -143,6 +150,9 @@ test('the app hides the operations waiting for their first live run', () => {
   assert.deepEqual(hidden, [
     'create_otp_reverse',
     'find_otp_reverse_status',
+    'message_status',
+    'new_message',
+    'new_waba_message',
     'save_contacts_bulk',
     'send_message_file',
   ]);

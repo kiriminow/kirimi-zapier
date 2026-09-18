@@ -1,11 +1,26 @@
 # kirimi-zapier
 
 Zapier integration for [Kirimi](https://kirimi.id) — send WhatsApp messages, broadcasts, WhatsApp
-Business API templates, and OTP codes from any of Zapier's 9,000+ apps.
+Business API templates, and OTP codes from any of Zapier's 9,000+ apps, and react to inbound
+messages as they arrive.
 
 Built with Zapier Platform CLI (`zapier-platform-core` 19.x, Node 22, CommonJS).
 
 ## What this integration does
+
+### Triggers (instant, REST Hook)
+
+| Trigger | Events | Scope | Visible |
+|---|---|---|---|
+| New Inbound Message | `message` | device | hidden |
+| Message Status Updated | `message.sent`, `message.failed` | device | hidden |
+| New WABA Message | `message` | waba | hidden |
+
+The triggers are implemented and tested but hidden because they depend on public API endpoints that
+do not exist yet: `POST /v1/webhook/subscribe`, `/v1/webhook/unsubscribe`, and `/v1/webhook/events`.
+Zapier forbids static webhook triggers in public integrations (`D016`, `D017`), so these cannot ship
+without the backend. The contract is specified in
+[`docs/WEBHOOK-SUBSCRIPTIONS-API.md`](docs/WEBHOOK-SUBSCRIPTIONS-API.md).
 
 ### Actions
 
@@ -34,10 +49,6 @@ Operations marked **hidden** are implemented and tested but not selectable in th
 Zapier requires one live Zap with a successful run for every visible operation before an
 integration can be published, so the hidden ones are flipped on in a later minor version once
 their test Zaps exist. See `test/app.test.js` for the guard that keeps this list honest.
-
-Triggers arrive in `1.1.0` once the Kirimi API exposes webhook subscribe/unsubscribe endpoints.
-Zapier does not allow static webhook triggers in public integrations, and polling needs a
-list-inbound-messages endpoint that does not exist yet.
 
 ## Authentication
 
@@ -96,16 +107,34 @@ plain object bodies. Everything else uses the shared `requestTemplate`.
 ## Layout
 
 ```
-index.js                 app definition: auth, requestTemplate, errors, creates, searches
+index.js                 app definition: auth, requestTemplate, errors, triggers, creates, searches
 authentication.js        custom auth (user_code + secret) and connection label
 lib/constants.js         API base URL
 lib/util.js              body shaping, envelope unwrapping, placeholder translation
 lib/devices.js           device dynamic dropdown shared by six operations
+lib/events.js            event normalization, HMAC signature verification, trigger output fields
 lib/errors.js            Kirimi error envelope and HTTP status to Zapier error mapping
+triggers/                REST Hook triggers, one file per trigger, aggregated in triggers/index.js
 creates/                 one file per action, aggregated in creates/index.js
 searches/                one file per search, aggregated in searches/index.js
 test/                    node:test suites with nock stubs
+docs/                    trigger design and the backend contract it depends on
 ```
+
+## Trigger delivery rules
+
+A hook subscription registers `bundle.targetUrl` with Kirimi and stores whatever the API returns in
+`bundle.subscribeData`; unsubscribe sends the subscription `id` back. Two rules shaped the code:
+
+- **Signature**: subscription deliveries carry `X-Kirimi-Signature`, an HMAC-SHA256 over
+  `<timestamp>.<raw body>`, verified with a timing-safe compare and a 5 minute freshness window. The
+  check only runs when Zapier exposes `bundle.rawRequest` and the subscription has a secret; if the
+  platform does not hand over the raw request there is nothing to verify against, so the event is
+  accepted. `test/triggers.test.js` covers accept, reject, unsigned, and stale.
+- **Stable ids and timestamps**: Zapier needs ISO-8601 with an offset (`D023`) and a stable id per
+  event. `lib/events.js` takes `created_at` when the API sends it and otherwise converts
+  `datetime_wib` to `+07:00`, and falls back to `msgId` or a payload fingerprint for the id, so the
+  triggers work before the backend changes land and keep working after.
 
 ## Error handling
 

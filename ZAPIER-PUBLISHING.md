@@ -56,6 +56,9 @@ Branding is set in the Zapier UI, not in this repository.
       - All paid features used by the actions must be enabled, without trial limits. That means a
         funded balance or an active package that covers send-message, WABA, and OTP v2.
       - Supply any extra login credentials and a short demo note for non-obvious features.
+      - Once the hook triggers are visible, reviewers must be able to produce a real event: a
+        connected device that can receive a WhatsApp message, plus a note explaining that the
+        trigger Zaps are switched on with a sample message already delivered.
 
 ## 4. Live Zaps (needs testers, this is the long pole)
 
@@ -79,11 +82,22 @@ Zapier requires proof that every visible operation works in production, in the a
       | 8 | Save Contact |
       | 9 | Find Device Status |
 
+- [ ] When the hook triggers ship (they are written but `display.hidden` until
+      `/v1/webhook/subscribe` exists), three more live Zaps are needed, and each one needs a real
+      event during review:
+
+      | # | Visible operation |
+      |---|---|
+      | 10 | New Inbound Message |
+      | 11 | Message Status Updated |
+      | 12 | New WABA Message |
+
 - [ ] Keep those Zaps and their runs. Do not delete them before or during review; Zapier may ask
       to inspect them.
 - [ ] Only then flip the hidden operations on in a `1.1.0` version (Send Message with File, Save
-      Contacts in Bulk, Create Reverse OTP, Find Reverse OTP Status). Each new visible operation
-      needs its own live Zap, so unhide them one release at a time.
+      Contacts in Bulk, Create Reverse OTP, Find Reverse OTP Status, and the three hook triggers
+      once the webhook subscription endpoints are live). Each new visible operation needs its own
+      live Zap, so unhide them one release at a time.
 - [ ] Watch the Monitoring page in the Platform UI for unhandled errors before submitting
       (`5.3`).
 
@@ -103,8 +117,18 @@ Zapier requires proof that every visible operation works in production, in the a
 - [x] `D012` / `D023` / `D024` — every visible operation ships a static sample with `id`,
       `success`, and `message` (the fields the integration always returns), no date values.
 - [x] `D018` — operation labels are title case. `test/app.test.js` enforces this.
-- [x] `D021` — search descriptions start with `Finds `. Enforced by the same test.
+- [x] `D021` — search descriptions start with `Finds ` and trigger descriptions start with
+      `Triggers when `. Enforced by the same test.
 - [x] `D022` — creates expose static input fields, so Zap templates can be built.
+- [x] `D006` — every hook trigger implements `performList`, so a user can pull a live sample while
+      setting up a Zap instead of waiting for a real message.
+- [x] `D016` / `D017` — no static webhooks: every trigger has both `performSubscribe` and
+      `performUnsubscribe`, so it is a real REST Hook.
+- [x] `T006` — `test/triggers.test.js` asserts that every key in a polling sample also exists in the
+      hook payload, so a Zap cannot map a field that later arrives empty.
+- [ ] `T003` / `D023` — depends on the API sending `created_at` in ISO-8601 with an offset. Until
+      then the integration converts `datetime_wib` (`+07:00`) itself; once the API ships
+      `created_at`, delete the fallback in `lib/events.js`.
 - [x] `D027` — the app runs on `zapier-platform-core` 19.1.0, the current release.
 - [x] `D028` — `flags.cleanInputData` is `false`, so empty values are handled by the integration
       itself instead of being stripped mid-flight.
@@ -115,7 +139,7 @@ Zapier requires proof that every visible operation works in production, in the a
 Run locally before every push:
 
 ```bash
-npm test                                    # 53 tests, nock stubbed
+npm test                                    # 70 tests, nock stubbed
 npx zapier-platform validate --without-style
 ```
 
@@ -146,11 +170,17 @@ npx zapier-platform validate
 - Prefer `display.hidden: true` over deleting an operation when phasing something out.
 - Users can only be migrated automatically within the same major version.
 
-## 8. Deliberately out of scope for v1
+## 8. Out of scope, and waiting on the backend
 
-- **Triggers.** Zapier forbids static webhooks in public integrations (`D016`, `D017`), so
-  instant triggers need `POST /v1/webhook/subscribe` and `/unsubscribe` on the Kirimi API, and
-  polling needs a list-inbound-messages endpoint plus pagination. Tracked for `1.1.0`.
+- **Triggers.** Implemented (`triggers/`) but hidden in v1.0.0 because they need
+  `POST /v1/webhook/subscribe`, `/unsubscribe`, and `/events` on the Kirimi API. Zapier forbids
+  static webhooks in public integrations (`D016`, `D017`). Contract:
+  `docs/WEBHOOK-SUBSCRIPTIONS-API.md`, work in `kirimi-mono-v2` and `kirimi-webhook`. Ship as
+  `1.1.0` and unhide.
+- **Signature enforcement.** Subscription deliveries are verified against
+  `X-Kirimi-Signature`, but the check is skipped when Zapier does not expose `bundle.rawRequest`.
+  Confirm the real field on the first live hook and, if it is missing, ask Zapier support or fall
+  back to a shared-secret query parameter.
 - **Device lifecycle, packages, deposits.** Creating, renewing, and funding devices from a Zap
   invites accidental spend, and Zapier restricts integrations that move money (`1.4`). Add them
   later only if there is real user demand, in a minor version.

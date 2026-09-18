@@ -1,9 +1,12 @@
 # Kirimi triggers on Zapier — design for 1.1.0
 
-Status: **design approved, not implemented.** The fan-out and `performList` decisions are locked
+Status: **design approved.** The fan-out and `performList` decisions are locked
 (new `tbl_webhook_subscriptions` + new `tbl_webhook_events`). The implementation-ready contract is
 [WEBHOOK-SUBSCRIPTIONS-API.md](./WEBHOOK-SUBSCRIPTIONS-API.md); this document explains why the work
 is needed and what was found in the existing pipeline.
+
+The Zapier side is already written (`triggers/`, `lib/events.js`, `test/triggers.test.js`) and ships
+as `display.hidden: true` until the endpoints below exist.
 
 Goal: give Zaps an instant event source (inbound WhatsApp message, delivery status, WABA message)
 so users can react to conversations instead of only sending into them.

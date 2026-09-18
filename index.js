@@ -3,6 +3,7 @@
 const authentication = require('./authentication');
 const creates = require('./creates');
 const searches = require('./searches');
+const triggers = require('./triggers');
 const { handleKirimiError } = require('./lib/errors');
 
 const App = {
@@ -19,6 +20,7 @@ const App = {
     },
   },
   afterResponse: [handleKirimiError],
+  triggers,
   creates,
   searches,
 };
