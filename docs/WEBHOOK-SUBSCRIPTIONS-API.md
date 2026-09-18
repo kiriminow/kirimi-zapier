@@ -39,7 +39,8 @@ Semantics:
 
 - Exactly one of `device_id` / `waba_id` is set. Enforced in the controller, matching the existing
   FK-less style of `tbl_devices`.
-- `id` is a ULID string, so it sorts by creation time and is safe to expose.
+- `id` is a UUID v4, the repo standard (`uuid` v4 is used everywhere else). Ordering comes from
+  `created_at`, not from the id.
 - `events` is a JSON array of allow-listed event names (section 4).
 - `secret` is 32 random bytes, hex encoded (64 chars). Returned **once** in the subscribe response
   and used as the HMAC key (section 5.3).
@@ -47,7 +48,15 @@ Semantics:
 - Cap: at most **25 active subscriptions per `user_code`** (config value, not hardcoded).
 - Idempotent subscribe: if an active row already exists for the same `(user_code, device_id,
   waba_id, target_url)`, return it instead of inserting. Zapier retries `performSubscribe`, and
-  duplicates would double every event.
+  duplicates would double every event. Enforced in the service, not by a unique index, because
+  MySQL treats `NULL`s in a unique index as distinct and one scope column is always `NULL`.
+
+**Two id spaces, do not mix them.** The public API and `tbl_webhook_subscriptions.waba_id` use the
+Meta `waba_id` column (`tbl_waba_accounts.waba_id`), because that is what SDK users pass. The event
+forwarder in `kirimi-webhook` receives `waba:<tbl_waba_accounts.id>`, the internal PK. Resolution
+happens in the forwarder (`resolvePublicWabaId`), and the receiver cache key keeps the internal form
+(`webhookSubscriptionsCache_waba:<account.id>`), which is why unsubscribe looks the account up again
+before invalidating.
 
 Drizzle placement: `apps/api/src/schema/webhooks.ts` already exists (stale, wrong columns). Add the
 new table to a new `apps/api/src/schema/webhook-subscriptions.ts` and leave the old file alone, or
@@ -132,7 +141,7 @@ Success (`200`):
 {
   "success": true,
   "data": {
-    "id": "01J8Z2W4K6Z8Q5R1V0M3N7P2TB",
+    "id": "8f14e45f-ceea-4d1a-9a1e-2f5c6b7d8e90",
     "device_id": "D-2J3IG",
     "waba_id": null,
     "target_url": "https://hooks.zapier.com/hooks/catch/123456/abcdef/",
@@ -150,7 +159,7 @@ field names stable. `secret` is the only place the HMAC key is handed out.
 ### 2.2 `POST /v1/webhook/unsubscribe`
 
 ```json
-{ "user_code": "U-XXXX", "secret": "....", "id": "01J8Z2W4K6Z8Q5R1V0M3N7P2TB" }
+{ "user_code": "U-XXXX", "secret": "....", "id": "8f14e45f-ceea-4d1a-9a1e-2f5c6b7d8e90" }
 ```
 
 | Condition | Response |
@@ -191,7 +200,7 @@ Success (`200`):
   "data": {
     "items": [
       {
-        "id": "01J8Z2W4K6Z8Q5R1V0M3N7P2TB",
+        "id": "8f14e45f-ceea-4d1a-9a1e-2f5c6b7d8e90",
         "event": "message",
         "created_at": "2026-01-31T08:15:42+07:00",
         "deviceId": "D-2J3IG",
@@ -226,15 +235,16 @@ forwardEvent(event, deviceId, payload)
 
 - Load subscriptions with a short Redis cache next to the existing ones
   (`webhookUrlCache_<deviceId>` / `webhookEventsCache_<deviceId>` pattern,
-  `apps/api/src/controllers/member/device.controller.ts:794,842`), TTL 60s, invalidated on
-  subscribe/unsubscribe.
-- Deliver subscription targets through the existing BullMQ pattern used for WABA
-  (`apps/api/src/services/waba-webhook-forwarder.service.ts:48`, worker
-  `apps/api/src/workers/waba-webhook-forward.worker.ts:72`): 10s timeout, concurrency 8,
-  exponential backoff, `UnrecoverableError` for 4xx except 408/429.
-- **Retries cause duplicate Zap runs** because Zapier does not deduplicate hooks. Retry only on
-  timeout, 5xx, and 429 (3 attempts), never on 4xx. `id` in the payload lets a user deduplicate with
-  a filter if they care. Document this in the trigger help text.
+  `apps/api/src/controllers/member/device.controller.ts:794,842`): key
+  `webhookSubscriptionsCache_<deviceId>` (for WABA the deviceId is `waba:<tbl_waba_accounts.id>`),
+  TTL 3600, read-through, and an explicit `DEL` from mono-v2 on subscribe/unsubscribe so a change
+  takes effect immediately instead of after the TTL.
+- Deliver subscription targets with a direct `POST` in `Promise.allSettled`, 10s timeout per target,
+  no retries. Rationale: Zapier does not deduplicate hook deliveries, so a retry can produce a
+  duplicate automation run, and the dashboard delivery path has no retries today either. Accepted
+  risk: a transient receiver outage loses that one event. If that ever matters more than duplicates,
+  retry only on connection errors and 5xx (where the receiver certainly did not accept the body) and
+  keep 4xx terminal.
 - A failing or slow subscription target must never delay or fail the dashboard delivery, and never
   fail the request that produced the event. Fire-and-forget, as today.
 - On `410 Gone`, mark the subscription revoked (section 2.2).
@@ -245,14 +255,14 @@ forwardEvent(event, deviceId, payload)
 ```json
 {
   "event": "message",
-  "id": "01J8Z2W4K6Z8Q5R1V0M3N7P2TB",
+  "id": "8f14e45f-ceea-4d1a-9a1e-2f5c6b7d8e90",
   "created_at": "2026-01-31T08:15:42+07:00",
   "datetime_wib": "2026-01-31 08:15:42",
   "deviceId": "D-2J3IG"
 }
 ```
 
-- `id` — ULID, unique per emitted event. Same value as the `tbl_webhook_events` row for that event.
+- `id` — UUID v4, unique per emitted event. Same value as the `tbl_webhook_events` row for that event.
 - `created_at` — ISO-8601 with `+07:00` offset, required by Zapier (`D023`, `T003`).
 - `datetime_wib` — unchanged; existing consumers depend on it.
 - Emitted for every delivery, dashboard included. A flag that only applies to subscriptions would be
@@ -334,41 +344,46 @@ contract change later.
 
 ### 5.1 `kirimi-mono-v2`
 
-- [ ] Migration: `tbl_webhook_subscriptions`, `tbl_webhook_events` + indexes
-- [ ] Drizzle schema for both tables
-- [ ] `webhook-subscription.controller.ts` with `subscribe`, `unsubscribe`, `events`
-- [ ] Routes in `api.routes.ts` with the stack above
-- [ ] Three `RateLimitKey` entries in `config/security.ts`
-- [ ] Subscription cap + idempotent subscribe
-- [ ] Ownership checks for `device_id` / `waba_id`
-- [ ] Event name validation against both allow-lists
-- [ ] Retention + cascade registration for the new tables
-- [ ] Redis cache for active subscriptions, invalidated on subscribe/unsubscribe
-- [ ] `ApiDocsPage.tsx` cards and `api-docs-llm.ts` entries
-- [ ] `/v1/webhook/events` covered by a test that compares keys with a real delivery
+- [x] Migration: `tbl_webhook_subscriptions`, `tbl_webhook_events` + indexes
+      (`apps/api/drizzle/0080_webhook_subscriptions.sql`)
+- [x] Drizzle schema for both tables (`apps/api/src/schema/webhook-subscriptions.ts`, barrel updated)
+- [x] `webhook-subscription.controller.ts` with `subscribe`, `unsubscribe`, `events`
+- [x] Routes in `api.routes.ts` with the stack above
+- [x] Three `RateLimitKey` entries in `config/security.ts`
+- [x] Subscription cap + idempotent subscribe
+- [x] Ownership checks for `device_id` / `waba_id`
+- [x] Event name validation against both allow-lists (`shared/utils/device-webhook-events.ts` is the
+      single source now, the member controller imports it instead of keeping a copy)
+- [x] Retention + cascade registration for the new tables
+- [x] Redis cache invalidation on subscribe/unsubscribe
+- [ ] `ApiDocsPage.tsx` cards and `api-docs-llm.ts` entries — still to do, these are hand maintained
+- [x] Controller validator tests (`webhook-subscription.controller.test.ts`, 24 cases via `bun test`)
+- [ ] End-to-end test of `/v1/webhook/events` against a real delivery (needs a database)
 
 ### 5.2 `kirimi-webhook`
 
-- [ ] Load active subscriptions per device/WABA (cached, invalidated)
-- [ ] Fan-out through the BullMQ pattern with per-target timeout and bound attempts
-- [ ] Write `tbl_webhook_events` for every emitted event
-- [ ] Add `id` (ULID) and `created_at` (`+07:00`) to the envelope
-- [ ] `X-Kirimi-Event`, `X-Kirimi-Timestamp`, `X-Kirimi-Signature` on subscription deliveries
-- [ ] Revoke on `410`, update `last_event_at` on success
-- [ ] Confirm the dashboard delivery path is byte-identical to today
-- [ ] Decide on `message.ack` for device events (enable or document)
+- [x] Load active subscriptions per device/WABA (cached, invalidated from mono-v2)
+- [x] Fan-out in `Promise.allSettled` with per-target timeout, no retries (see 3.1)
+- [x] Write `tbl_webhook_events` for every emitted event
+- [x] Add `id` (UUID v4) and `created_at` (`+07:00`) to the envelope
+- [x] `X-Kirimi-Event`, `X-Kirimi-Timestamp`, `X-Kirimi-Signature` on subscription deliveries
+- [x] Revoke on `410`, update `last_event_at` on success
+- [x] Dashboard delivery path unchanged except for the two additive envelope fields
+- [ ] Decide on `message.ack` for device events (enable or document) — still open
+- [x] Unit tests for the new module (`webhook-subscription-forwarder.service.test.ts`, 19 cases)
 
 ### 5.3 `kirimi-zapier`
 
-- [ ] Three hook triggers with `type: 'hook'`, `performSubscribe`, `performUnsubscribe`, `perform`,
+- [x] Three hook triggers with `type: 'hook'`, `performSubscribe`, `performUnsubscribe`, `perform`,
       `performList`
-- [ ] `normalizeEvent` used by both `perform` and `performList`, with signature verification
-- [ ] `device_id` / `waba_id` dynamic dropdowns reused from `lib/devices.js`
-- [ ] Help text that states the duplicate-run caveat and the `message.ack` limitation
-- [ ] Tests with nock: subscribe body and stored `subscribeData`, unsubscribe body, `performList`
-      mapping, signature accept/reject, key parity between `perform` and `performList`
-- [ ] `display.hidden: true` until the backend is deployed, then a 1.1.0 release
-- [ ] Update `ZAPIER-PUBLISHING.md` (9 → 12 visible operations, new live Zaps)
+- [x] `normalizeEvent` used by both `perform` and `performList`, with signature verification
+- [x] `device_id` / `waba_id` dynamic dropdowns reused from `lib/devices.js`
+- [x] Help text that states the duplicate-run caveat and the `message.ack` limitation
+- [x] Tests with nock: subscribe body and stored `subscribeData`, unsubscribe body, `performList`
+      mapping, signature accept/reject/stale, key parity between `perform` and `performList`
+- [x] `display.hidden: true` until the backend is deployed
+- [x] `ZAPIER-PUBLISHING.md` updated (9 → 12 visible operations, new live Zaps)
+- [ ] Unhide and release as 1.1.0 once both services are live
 
 ## 6. Rollout order
 

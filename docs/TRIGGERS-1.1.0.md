@@ -67,7 +67,7 @@ Additive. Nothing existing is modified, so dashboard webhooks keep working untou
 
 | column | type | notes |
 |---|---|---|
-| `id` | varchar(36) PK | ULID or UUID, returned to Zapier and used by unsubscribe |
+| `id` | varchar(36) PK | UUID v4, returned to Zapier and used by unsubscribe |
 | `user_code` | varchar(100) notNull | owner, indexed |
 | `device_id` | varchar(100) null | scope, indexed, mutually exclusive with `waba_id` |
 | `waba_id` | varchar(100) null | scope, indexed |
@@ -112,7 +112,7 @@ Additive fields on the envelope, so existing consumers keep working:
 }
 ```
 
-- `id` — unique per delivered event, ULID preferred so it sorts by time.
+- `id` — unique per delivered event (UUID v4, the repo standard; ordering comes from `created_at`).
 - `created_at` — ISO-8601 with the `+07:00` offset (`D023`, `T003`).
 - `datetime_wib` — untouched, existing consumers depend on it.
 - Both new fields enabled for every delivery (not only Zapier), because a flag adds a branch that
