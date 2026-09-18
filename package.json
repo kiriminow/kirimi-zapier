@@ -1,0 +1,33 @@
+{
+  "name": "kirimi-zapier",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Kirimi is a WhatsApp messaging platform for sending messages, broadcasts, WABA templates, and OTP codes.",
+  "homepage": "https://kirimi.id",
+  "author": {
+    "name": "Kirimi Support",
+    "email": "support@kirimi.id"
+  },
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kiriminow/kirimi-zapier.git"
+  },
+  "main": "index.js",
+  "engines": {
+    "node": ">=22"
+  },
+  "scripts": {
+    "test": "node --test test/",
+    "validate": "zapier-platform validate --without-style",
+    "push": "zapier-platform push"
+  },
+  "dependencies": {
+    "form-data": "^4.0.4",
+    "zapier-platform-core": "19.1.0"
+  },
+  "devDependencies": {
+    "nock": "^14.0.9",
+    "zapier-platform-cli": "19.1.0"
+  }
+}

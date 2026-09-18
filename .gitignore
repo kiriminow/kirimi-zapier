@@ -1,0 +1,32 @@
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Dependency directories
+node_modules/
+
+# Zapier build output
+build/
+
+# Test and coverage output
+coverage
+.nyc_output
+
+# TypeScript cache
+*.tsbuildinfo
+
+# Environment
+.env
+.env.test
+
+# IDE and OS
+.idea/
+.vscode-test
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
