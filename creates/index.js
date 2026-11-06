@@ -11,6 +11,9 @@ const saveContact = require('./save_contact');
 const sendMessageFile = require('./send_message_file');
 const saveContactsBulk = require('./save_contacts_bulk');
 const createOtpReverse = require('./create_otp_reverse');
+const syncWabaTemplates = require('./sync_waba_templates');
+const sendWabaOtp = require('./send_waba_otp');
+const verifyWabaOtp = require('./verify_waba_otp');
 
 module.exports = {
   [sendMessage.key]: sendMessage,
@@ -24,4 +27,7 @@ module.exports = {
   [sendMessageFile.key]: sendMessageFile,
   [saveContactsBulk.key]: saveContactsBulk,
   [createOtpReverse.key]: createOtpReverse,
+  [syncWabaTemplates.key]: syncWabaTemplates,
+  [sendWabaOtp.key]: sendWabaOtp,
+  [verifyWabaOtp.key]: verifyWabaOtp,
 };

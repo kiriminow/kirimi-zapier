@@ -149,11 +149,16 @@ test('the app hides the operations waiting for their first live run', () => {
 
   assert.deepEqual(hidden, [
     'create_otp_reverse',
+    'find_message_status',
     'find_otp_reverse_status',
+    'find_waba_conversations',
     'message_status',
     'new_message',
     'new_waba_message',
     'save_contacts_bulk',
     'send_message_file',
+    'send_waba_otp',
+    'sync_waba_templates',
+    'verify_waba_otp',
   ]);
 });
