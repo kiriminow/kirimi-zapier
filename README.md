@@ -37,6 +37,9 @@ without the backend. The contract is specified in
 | Send Message with File | `POST /v1/send-message-file` (multipart) | hidden |
 | Save Contacts in Bulk | `POST /v1/save-contacts-bulk` | hidden |
 | Create Reverse OTP | `POST /v2/otp-reverse/create` | hidden |
+| Sync WABA Templates | `POST /v1/waba/templates/sync` | hidden |
+| Send WABA OTP | `POST /v1/waba/send-otp` | hidden |
+| Verify WABA OTP | `POST /v1/waba/verify-otp` | hidden |
 
 ### Searches
 
@@ -44,6 +47,8 @@ without the backend. The contract is specified in
 |---|---|---|
 | Find Device Status | `POST /v1/device-status-enhanced` | yes |
 | Find Reverse OTP Status | `POST /v2/otp-reverse/status` | hidden |
+| Find Message Status | `POST /v1/message-status` | hidden |
+| Find WABA Conversations | `POST /v1/waba/conversations` | hidden |
 
 Operations marked **hidden** are implemented and tested but not selectable in the Zap editor yet.
 Zapier requires one live Zap with a successful run for every visible operation before an

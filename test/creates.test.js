@@ -379,3 +379,89 @@ test('scalar payloads are wrapped instead of dropped', async () => {
   assert.equal(result.data, 42);
   assert.equal(result.success, true);
 });
+
+test('template sync posts the waba id and keys the result by it', async () => {
+  const captured = intercept('/v1/waba/templates/sync', {
+    success: true,
+    data: {
+      waba_id: 'WABA-1',
+      synced_count: 1,
+      templates: [{ name: 'order_update', category: 'UTILITY', language: 'id', status: 'APPROVED' }],
+    },
+    message: 'Sinkronisasi template berhasil',
+  });
+
+  const result = await perform('sync_waba_templates', { inputData: { waba_id: 'WABA-1' } });
+
+  assert.equal(captured[0].waba_id, 'WABA-1');
+  assert.equal(result.id, 'WABA-1');
+  assert.equal(result.synced_count, 1);
+  assert.equal(result.templates[0].name, 'order_update');
+});
+
+test('template sync surfaces an unknown account', async () => {
+  intercept('/v1/waba/templates/sync', { success: false, data: null, message: 'Akun WABA tidak ditemukan' }, 404);
+
+  await assert.rejects(
+    () => perform('sync_waba_templates', { inputData: { waba_id: 'NOPE' } }),
+    /Akun WABA tidak ditemukan/,
+  );
+});
+
+test('waba otp send posts waba, recipient and template', async () => {
+  const captured = intercept('/v1/waba/send-otp', {
+    success: true,
+    data: { message_id: 'wamid.1', phone: '62812***', waba_id: 'WABA-1', template_name: 'otp_login', expires_in: 5 },
+    message: 'OTP terkirim via WABA',
+  });
+
+  const result = await perform('send_waba_otp', {
+    inputData: { waba_id: 'WABA-1', to: '628123456789', template_name: 'otp_login' },
+  });
+
+  assert.deepEqual(captured[0], {
+    ...AUTH,
+    waba_id: 'WABA-1',
+    to: '628123456789',
+    template_name: 'otp_login',
+  });
+  assert.equal(result.id, 'wamid.1');
+  assert.equal(result.expires_in, 5);
+});
+
+test('waba otp send surfaces a rejected template', async () => {
+  intercept('/v1/waba/send-otp', { success: false, data: null, message: 'template_name is required' }, 400);
+
+  await assert.rejects(
+    () => perform('send_waba_otp', { inputData: { waba_id: 'WABA-1', to: '628123456789' } }),
+    /template_name is required/,
+  );
+});
+
+test('waba otp verify posts the code and returns the verification', async () => {
+  const captured = intercept('/v1/waba/verify-otp', {
+    success: true,
+    data: { verified: true, phone: '62812***', waba_id: 'WABA-1', verified_at: '2026-11-05T09:31:00.000Z' },
+    message: 'OTP berhasil diverifikasi',
+  });
+
+  const result = await perform('verify_waba_otp', {
+    inputData: { waba_id: 'WABA-1', to: '628123456789', otp_code: '123456' },
+  });
+
+  assert.equal(captured[0].otp_code, '123456');
+  assert.equal(captured[0].to, '628123456789');
+  assert.equal(result.verified, true);
+});
+
+test('waba otp verify surfaces a wrong code', async () => {
+  intercept('/v1/waba/verify-otp', { success: false, data: null, message: 'Kode OTP salah' }, 400);
+
+  await assert.rejects(
+    () =>
+      perform('verify_waba_otp', {
+        inputData: { waba_id: 'WABA-1', to: '628123456789', otp_code: '000000' },
+      }),
+    /Kode OTP salah/,
+  );
+});

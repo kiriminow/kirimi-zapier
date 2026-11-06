@@ -95,8 +95,9 @@ Zapier requires proof that every visible operation works in production, in the a
 - [ ] Keep those Zaps and their runs. Do not delete them before or during review; Zapier may ask
       to inspect them.
 - [ ] Only then flip the hidden operations on in a `1.1.0` version (Send Message with File, Save
-      Contacts in Bulk, Create Reverse OTP, Find Reverse OTP Status, and the three hook triggers
-      once the webhook subscription endpoints are live). Each new visible operation needs its own
+      Contacts in Bulk, Create Reverse OTP, Find Reverse OTP Status, Find Message Status, Find WABA
+      Conversations, Sync WABA Templates, Send WABA OTP, Verify WABA OTP, and the three hook
+      triggers once the webhook subscription endpoints are live). Each new visible operation needs its own
       live Zap, so unhide them one release at a time.
 - [ ] Watch the Monitoring page in the Platform UI for unhandled errors before submitting
       (`5.3`).
